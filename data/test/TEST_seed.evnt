@@ -1,0 +1,17 @@
+[
+  {
+    "event_type": "payment",
+    "customer_id": 1,
+    "amount": 199.99,
+    "description": "Subscription Payment",
+    "timestamp": "2025-01-01T10:00:00Z"
+  },
+  {
+    "event_type": "expense",
+    "customer_id": null,
+    "amount": 500.00,
+    "description": "Marketing Spend",
+    "timestamp": "2025-01-02T12:00:00Z"
+  }
+]
+

@@ -1,0 +1,11 @@
+{
+  "Jan": {
+    "acquired": 100,
+    "active": [50, 40, 35]
+  },
+  "Feb": {
+    "acquired": 120,
+    "active": [60, 55, 50]
+  }
+}
+

@@ -1,0 +1,207 @@
+[
+  {
+    "event_type": "payment",
+    "customer_id": 201,
+    "amount": 10000.00,
+    "description": "Enterprise License",
+    "timestamp": "2025-01-01T10:00:00Z"
+  },
+  {
+    "event_type": "payment",
+    "customer_id": 202,
+    "amount": 12000.00,
+    "description": "Premium License",
+    "timestamp": "2025-01-02T11:00:00Z"
+  },
+  {
+    "event_type": "expense",
+    "customer_id": null,
+    "amount": 5000.00,
+    "description": "Marketing Expense",
+    "timestamp": "2025-01-05T14:00:00Z"
+  },
+  {
+    "event_type": "expense",
+    "customer_id": null,
+    "amount": 8000.00,
+    "description": "Cloud Hosting",
+    "timestamp": "2025-01-07T15:30:00Z"
+  },
+  {
+    "event_type": "cancellation",
+    "customer_id": 202,
+    "amount": null,
+    "description": "User Cancelled Subscription",
+    "timestamp": "2025-01-10T08:00:00Z"
+  },
+  {
+    "event_type": "nps",
+    "customer_id": 203,
+    "amount": 9.0,
+    "description": "Promoter",
+    "timestamp": "2025-01-12T12:00:00Z"
+  },
+  {
+    "event_type": "nps",
+    "customer_id": 204,
+    "amount": 4.0,
+    "description": "Detractor",
+    "timestamp": "2025-01-13T09:00:00Z"
+  },
+  {
+    "event_type": "payment",
+    "customer_id": 205,
+    "amount": 15000.00,
+    "description": "New Customer Payment",
+    "timestamp": "2025-01-15T16:00:00Z"
+  },
+
+  {
+    "event_type": "payment",
+    "customer_id": 206,
+    "amount": 13000.00,
+    "description": "Premium License",
+    "timestamp": "2025-01-20T10:30:00Z"
+  },
+  {
+    "event_type": "expense",
+    "customer_id": null,
+    "amount": 10000.00,
+    "description": "R&D Expense",
+    "timestamp": "2025-01-25T09:00:00Z"
+  },
+  {
+    "event_type": "payment",
+    "customer_id": 207,
+    "amount": 20000.00,
+    "description": "Enterprise License",
+    "timestamp": "2025-01-28T13:45:00Z"
+  },
+  {
+    "event_type": "nps",
+    "customer_id": 205,
+    "amount": 8.0,
+    "description": "Promoter",
+    "timestamp": "2025-02-01T12:00:00Z"
+  },
+  {
+    "event_type": "expense",
+    "customer_id": null,
+    "amount": 7000.00,
+    "description": "International Expansion",
+    "timestamp": "2025-02-05T11:15:00Z"
+  },
+  {
+    "event_type": "payment",
+    "customer_id": 208,
+    "amount": 25000.00,
+    "description": "High-Tier License",
+    "timestamp": "2025-02-14T16:30:00Z"
+  },
+  {
+    "event_type": "payment",
+    "customer_id": 209,
+    "amount": 18000.00,
+    "description": "Premium License",
+    "timestamp": "2025-02-25T17:00:00Z"
+  },
+  {
+    "event_type": "cancellation",
+    "customer_id": 206,
+    "amount": null,
+    "description": "User Cancelled Subscription",
+    "timestamp": "2025-03-02T08:20:00Z"
+  },
+  {
+    "event_type": "payment",
+    "customer_id": 210,
+    "amount": 28000.00,
+    "description": "Enterprise License",
+    "timestamp": "2025-03-15T10:45:00Z"
+  },
+  {
+    "event_type": "expense",
+    "customer_id": null,
+    "amount": 12000.00,
+    "description": "Platform Upgrades",
+    "timestamp": "2025-03-20T14:10:00Z"
+  },
+  {
+    "event_type": "nps",
+    "customer_id": 208,
+    "amount": 10.0,
+    "description": "Promoter",
+    "timestamp": "2025-03-25T09:00:00Z"
+  },
+  {
+    "event_type": "payment",
+    "customer_id": 211,
+    "amount": 30000.00,
+    "description": "Enterprise License",
+    "timestamp": "2025-04-01T15:00:00Z"
+  },
+  {
+    "event_type": "expense",
+    "customer_id": null,
+    "amount": 15000.00,
+    "description": "New Regional HQ Opening",
+    "timestamp": "2025-04-05T14:40:00Z"
+  },
+  {
+    "event_type": "nps",
+    "customer_id": 209,
+    "amount": 7.0,
+    "description": "Neutral",
+    "timestamp": "2025-04-10T08:00:00Z"
+  },
+  {
+    "event_type": "payment",
+    "customer_id": 212,
+    "amount": 35000.00,
+    "description": "Advanced Enterprise License",
+    "timestamp": "2025-04-15T19:00:00Z"
+  },
+  {
+    "event_type": "expense",
+    "customer_id": null,
+    "amount": 20000.00,
+    "description": "Marketing Blitz",
+    "timestamp": "2025-05-01T09:30:00Z"
+  },
+  {
+    "event_type": "payment",
+    "customer_id": 213,
+    "amount": 40000.00,
+    "description": "Enterprise + Support Package",
+    "timestamp": "2025-05-10T13:20:00Z"
+  },
+  {
+    "event_type": "cancellation",
+    "customer_id": 207,
+    "amount": null,
+    "description": "User Cancelled Subscription",
+    "timestamp": "2025-05-15T08:55:00Z"
+  },
+  {
+    "event_type": "payment",
+    "customer_id": 214,
+    "amount": 45000.00,
+    "description": "Global Enterprise License",
+    "timestamp": "2025-05-25T16:00:00Z"
+  },
+  {
+    "event_type": "nps",
+    "customer_id": 210,
+    "amount": 9.0,
+    "description": "Promoter",
+    "timestamp": "2025-06-01T11:10:00Z"
+  },
+  {
+    "event_type": "expense",
+    "customer_id": null,
+    "amount": 25000.00,
+    "description": "Major Platform Overhaul",
+    "timestamp": "2025-06-05T14:45:00Z"
+  }
+]
+
