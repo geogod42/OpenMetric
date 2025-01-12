@@ -1,0 +1,28 @@
+{
+  "January": {
+    "acquired": 500,
+    "active": [400, 350, 300, 250]
+  },
+  "February": {
+    "acquired": 600,
+    "active": [550, 500, 450, 400]
+  },
+  "March": {
+    "acquired": 700,
+    "active": [600, 550, 500, 450]
+  },
+
+  "April": {
+    "acquired": 900,
+    "active": [750, 700, 650, 600]
+  },
+  "May": {
+    "acquired": 1100,
+    "active": [950, 900, 850, 800]
+  },
+  "June": {
+    "acquired": 1500,
+    "active": [1200, 1150, 1100, 1050]
+  }
+}
+

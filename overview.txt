@@ -1,0 +1,750 @@
+
+/Users/jude/Desktop/OpenMetric/OpenMetric/Cargo.toml:
+[package]
+name = "OpenMetric"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+actix-web = "4.0.1"
+actix-files = "0.6.0"
+chrono = "0.4"
+plotters = "0.3"
+plotters-svg = "0.3"
+env_logger = "0.9"
+log = "0.4"
+serde_urlencoded = "0.7"
+
+
+/Users/jude/Desktop/OpenMetric/OpenMetric/overview.txt:
+
+/Users/jude/Desktop/OpenMetric/OpenMetric/LICENSE:
+MIT License
+
+Copyright (c) 2025 jude
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+/Users/jude/Desktop/OpenMetric/OpenMetric/proj_structure.txt:
+business_metrics/
+│
+├── Cargo.toml         # Project dependencies and metadata
+├── src/
+│   ├── main.rs        # Entry point, initializes the web server
+│   ├── metrics/       # Metric-related logic and data processing
+│   │   ├── mod.rs     # Re-exports for metrics
+│   │   ├── events.rs  # Event-related structs and logic
+│   │   ├── retention.rs # Retention data handling
+│   │   └── calculators.rs # Functions for metric calculations (NDR, gross margin, etc.)
+│   ├── charts/        # Chart generation logic
+│   │   ├── mod.rs     # Re-exports for charts
+│   │   └── time_series.rs # Time-series chart generation
+│   ├── routes/        # Web routes for the application
+│   │   ├── mod.rs     # Re-exports for routes
+│   │   └── index.rs   # Dashboard ("/") route
+│   ├── templates/     # Web server HTML templates (for charts and data display)
+│   │   ├── index.html
+│   │   └── charts/
+│   │       └── chart1.png
+├── data/              # Test data files
+│   ├── TEST_seriesD.evnt   # Event data for series D startup
+│   ├── TEST_seriesD.ret    # Retention data for series D startup
+│   └── other/         # Additional test files
+
+/Users/jude/Desktop/OpenMetric/OpenMetric/README.md:
+# OpenMetric
+KISS Business Metrics Dashboard for Startups 
+
+/Users/jude/Desktop/OpenMetric/OpenMetric/src/main.rs:
+mod metrics;
+mod charts;
+mod routes;
+
+use actix_web::{App, HttpServer};
+use routes::index::index;
+
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    env_logger::init();
+    println!("Starting server at http://127.0.0.1:8080/");
+
+    HttpServer::new(|| {
+        App::new()
+            .service(index)
+            .service(actix_files::Files::new("/static", "./src/"))
+    })
+    .bind("127.0.0.1:8080")?
+    .run()
+    .await
+}
+
+
+/Users/jude/Desktop/OpenMetric/OpenMetric/src/metrics/events.rs:
+use serde::{Deserialize, Serialize};
+use std::fs::File;
+use std::io::Read;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Event {
+    pub event_type: String,
+    pub customer_id: Option<u32>,
+    pub amount: Option<f64>,
+    pub description: Option<String>,
+    pub timestamp: String,
+}
+
+pub fn load_events(file_path: &str) -> Result<Vec<Event>, Box<dyn std::error::Error>> {
+    let mut file = File::open(file_path)?;
+    let mut data = String::new();
+    file.read_to_string(&mut data)?;
+    let events: Vec<Event> = serde_json::from_str(&data)?;
+
+    println!("Loaded events: {:?}", events); // Debug log
+    Ok(events)
+}
+
+
+/Users/jude/Desktop/OpenMetric/OpenMetric/src/metrics/mod.rs:
+pub mod events;
+pub mod retention;
+pub mod calculators;
+
+pub use events::load_events;
+pub use retention::load_retention;
+pub use calculators::{collect_monthly_metrics};
+
+
+use std::fs;
+
+pub fn get_data_files() -> Vec<(String, String)> {
+    let mut evnt_files = vec![];
+    let mut ret_files = vec![];
+
+    if let Ok(entries) = fs::read_dir("data/") {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(ext) = path.extension() {
+                if ext == "evnt" {
+                    evnt_files.push(path.file_stem().unwrap().to_string_lossy().to_string());
+                } else if ext == "ret" {
+                    ret_files.push(path.file_stem().unwrap().to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    evnt_files
+        .iter()
+        .filter_map(|evnt| {
+            ret_files
+                .iter()
+                .find(|ret| *ret == evnt)
+                .map(|ret| (format!("data/{}.evnt", evnt), format!("data/{}.ret", ret)))
+        })
+        .collect()
+}
+
+
+/Users/jude/Desktop/OpenMetric/OpenMetric/src/metrics/calculators.rs:
+use crate::metrics::events::Event;
+use crate::metrics::retention::RetentionData;
+use chrono::{DateTime, Utc, Datelike};
+use std::collections::HashMap;
+
+pub struct MonthlyMetrics {
+    pub months: Vec<String>,
+    pub revenue: Vec<f64>,
+    pub burn_rate: Vec<f64>,
+    pub runway: Vec<f64>,
+    pub retention: Vec<f64>,
+    pub net_dollar_retention: Vec<f64>,
+    pub gross_margin: Vec<f64>,
+}
+
+pub fn collect_monthly_metrics(
+    events: &[Event],
+    retention_map: &HashMap<String, RetentionData>,
+) -> MonthlyMetrics {
+    let grouped_events = group_events_by_month(events);
+
+    let mut month_keys: Vec<String> = grouped_events.keys().cloned().collect();
+    month_keys.sort();
+
+    let mut revenue = Vec::new();
+    let mut burn_rate = Vec::new();
+    let mut runway = Vec::new();
+    let mut retention = Vec::new();
+    let mut ndr = Vec::new();
+    let mut gross_margin = Vec::new();
+
+    let static_empty_vec: Vec<Event> = Vec::new(); // Static empty vector
+
+    for m in &month_keys {
+        let events = grouped_events.get(m).unwrap_or(&static_empty_vec);
+        let monthly_revenue: f64 = events.iter()
+            .filter(|e| e.event_type == "payment")
+            .map(|e| e.amount.unwrap_or(0.0))
+            .sum();
+        let monthly_expenses: f64 = events.iter()
+            .filter(|e| e.event_type == "expense")
+            .map(|e| e.amount.unwrap_or(0.0))
+            .sum();
+
+        revenue.push(monthly_revenue);
+        burn_rate.push(monthly_expenses - monthly_revenue);
+        runway.push(if monthly_expenses > 0.0 {
+            monthly_revenue / monthly_expenses
+        } else {
+            f64::INFINITY
+        });
+
+        if let Some(retention_data) = retention_map.get(m) {
+            if retention_data.acquired > 0 {
+                retention.push(
+                    retention_data.active.iter().sum::<u32>() as f64 / retention_data.acquired as f64 * 100.0,
+                );
+            } else {
+                retention.push(0.0);
+            }
+        } else {
+            retention.push(0.0);
+        }
+
+        ndr.push(calculate_net_dollar_retention(events));
+        gross_margin.push(calculate_gross_margin(events));
+    }
+
+    println!("Monthly metrics calculated: {:?}", month_keys); // Debug log
+
+    MonthlyMetrics {
+        months: month_keys,
+        revenue,
+        burn_rate,
+        runway,
+        retention,
+        net_dollar_retention: ndr,
+        gross_margin,
+    }
+}
+
+/// Groups events by their `YYYY-MM` month.
+fn group_events_by_month(events: &[Event]) -> HashMap<String, Vec<Event>> {
+    let mut grouped_events: HashMap<String, Vec<Event>> = HashMap::new();
+
+    for event in events {
+        let timestamp = DateTime::parse_from_rfc3339(&event.timestamp)
+            .unwrap()
+            .with_timezone(&Utc);
+        let month_key = format!("{}-{:02}", timestamp.year(), timestamp.month());
+
+        grouped_events.entry(month_key).or_default().push(event.clone());
+    }
+
+    grouped_events
+}
+
+pub fn calculate_net_dollar_retention(_events: &[Event]) -> f64 {
+    100.0 // Placeholder logic
+}
+
+pub fn calculate_gross_margin(_events: &[Event]) -> f64 {
+    50.0 // Placeholder logic
+}
+
+/// Formats the given numeric value into a string with $/k/m as appropriate.
+/// E.g., 550.0 -> "$550", 55_000 -> "$55.0k", 1_220_000 -> "$1.22m".
+pub fn format_revenue(value: f64) -> String {
+    if value.abs() < 1_000.0 {
+        format!("${:.0}", value)
+    } else if value.abs() < 1_000_000.0 {
+        format!("${:.1}k", value / 1_000.0)
+    } else {
+        format!("${:.2}m", value / 1_000_000.0)
+    }
+}
+
+
+
+/Users/jude/Desktop/OpenMetric/OpenMetric/src/metrics/retention.rs:
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::Read;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RetentionData {
+    pub acquired: u32,
+    pub active: Vec<u32>,
+}
+
+pub fn load_retention(file_path: &str) -> Result<HashMap<String, RetentionData>, Box<dyn std::error::Error>> {
+    let mut file = File::open(file_path)?;
+    let mut data = String::new();
+    file.read_to_string(&mut data)?;
+    let retention: HashMap<String, RetentionData> = serde_json::from_str(&data)?;
+
+    println!("Loaded retention data: {:?}", retention); // Debug log
+    Ok(retention)
+}
+
+
+/Users/jude/Desktop/OpenMetric/OpenMetric/src/charts/time_series.rs:
+use plotters::prelude::*;
+use plotters_svg::SVGBackend;
+
+/// Formats numeric value into $/k/m format.
+fn format_revenue(value: f64) -> String {
+    if value.abs() < 1_000.0 {
+        format!("${:.0}", value)
+    } else if value.abs() < 1_000_000.0 {
+        format!("${:.1}k", value / 1_000.0)
+    } else {
+        format!("${:.2}m", value / 1_000_000.0)
+    }
+}
+
+pub fn generate_time_series_chart(
+    x_labels: &[String],
+    y_values: &[f64],
+    chart_title: &str,
+    output_path: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let root_area = SVGBackend::new(output_path, (640, 480)).into_drawing_area();
+    root_area.fill(&WHITE)?;
+
+    let max_val = y_values.iter().cloned().fold(0.0_f64, f64::max).max(10.0);
+    let x_range = 0..x_labels.len();
+    let y_range = 0.0..(max_val * 1.1);
+
+    let mut chart = ChartBuilder::on(&root_area)
+        .caption(chart_title, ("Arial", 22).into_font())
+        .margin(20)
+        .x_label_area_size(40)
+        .y_label_area_size(50)
+        .build_cartesian_2d(x_range, y_range)?;
+
+    chart.configure_mesh()
+        .x_labels(x_labels.len())
+        .x_label_formatter(&|idx| x_labels.get(*idx).cloned().unwrap_or_default())
+        .y_label_formatter(&|val| format_revenue(*val))
+        .draw()?;
+
+    chart.draw_series(LineSeries::new(
+        (0..).zip(y_values.iter()).map(|(i, &val)| (i, val)),
+        &BLACK,
+    ))?;
+
+    Ok(())
+}
+
+/Users/jude/Desktop/OpenMetric/OpenMetric/src/charts/mod.rs:
+pub mod time_series; // Declare the time_series module
+
+use crate::metrics::calculators::MonthlyMetrics;
+use std::error::Error;
+use crate::charts::time_series::generate_time_series_chart; // Import generate_time_series_chart function
+
+pub fn generate_all_charts(metrics: &MonthlyMetrics) -> Result<(), Box<dyn Error>> {
+    let chart_paths = vec![
+        ("Revenue",            "src/templates/charts/chart_revenue.svg",         &metrics.revenue),
+        ("Burn Rate",          "src/templates/charts/chart_burn_rate.svg",       &metrics.burn_rate),
+        ("Runway (Months)",    "src/templates/charts/chart_runway.svg",          &metrics.runway),
+        ("Retention (%)",      "src/templates/charts/chart_retention.svg",       &metrics.retention),
+        ("Net Dollar Ret. (%)","src/templates/charts/chart_ndr.svg",             &metrics.net_dollar_retention),
+        ("Gross Margin (%)",   "src/templates/charts/chart_gross_margin.svg",    &metrics.gross_margin),
+    ];
+
+    for (title, path, data) in chart_paths {
+        generate_time_series_chart(&metrics.months, data, title, path)?;
+    }
+
+    Ok(())
+}
+
+
+/Users/jude/Desktop/OpenMetric/OpenMetric/src/templates/index.html:
+
+/Users/jude/Desktop/OpenMetric/OpenMetric/src/routes/index.rs:
+use actix_web::{get, HttpRequest, HttpResponse, Responder};
+use crate::metrics::calculators::MonthlyMetrics;
+use crate::metrics::events::Event;
+use crate::metrics::{get_data_files, load_events, load_retention, collect_monthly_metrics};
+use crate::charts::generate_all_charts;
+use std::collections::HashMap;
+use chrono::{DateTime, Utc, Duration};
+
+#[get("/")]
+pub async fn index(req: HttpRequest) -> impl Responder {
+    // Parse query parameters
+    let query: HashMap<String, String> = serde_urlencoded::from_str(req.query_string()).unwrap_or_default();
+    let time_window = query.get("time_window").cloned().unwrap_or_else(|| "all".to_string());
+    let page: usize = query.get("page").and_then(|v| v.parse().ok()).unwrap_or(0);
+
+    // Load data files
+    let data_files = get_data_files();
+    if data_files.is_empty() {
+        return HttpResponse::Ok().body("<h1>No valid .evnt and .ret file pairs found in data/ folder</h1>");
+    }
+
+    let (events_file, retention_file) = &data_files[0];
+    let events = load_events(events_file).unwrap_or_else(|e| panic!("Failed to load events: {}", e));
+    let retention_map = load_retention(retention_file).unwrap_or_else(|e| panic!("Failed to load retention data: {}", e));
+
+    // Filter events based on time_window
+    let filtered_events = match time_window.as_str() {
+        "3" => filter_events_by_months(&events, 3),
+        "6" => filter_events_by_months(&events, 6),
+        "12" => filter_events_by_months(&events, 12),
+        _ => events,
+    };
+
+    // Calculate metrics
+    let monthly_metrics = collect_monthly_metrics(&filtered_events, &retention_map);
+
+    // Generate charts
+    generate_all_charts(&monthly_metrics).expect("Failed to generate charts");
+
+    // Build HTML response
+    let html = build_html_response(&monthly_metrics, events_file, page);
+    HttpResponse::Ok().content_type("text/html").body(html)
+}
+
+/// Filter events by the last X months
+fn filter_events_by_months(events: &[Event], months: i64) -> Vec<Event> {
+    let cutoff_date = Utc::now() - Duration::days(months * 30);
+    events
+        .iter()
+        .filter(|e| {
+            let dt = DateTime::parse_from_rfc3339(&e.timestamp).unwrap().with_timezone(&Utc);
+            dt > cutoff_date
+        })
+        .cloned()
+        .collect()
+}
+
+
+/// Helper to decide if the latest metric is trending up or down.
+/// Returns a CSS color: "green" or "red". Defaults to black if there's only 1 data point.
+fn get_trend_color(values: &[f64]) -> &str {
+    if values.len() < 2 {
+        return "black";
+    }
+    let last = values.len() - 1;
+    let second_last = values.len() - 2;
+    if values[last] >= values[second_last] {
+        "green"
+    } else {
+        "red"
+    }
+}
+
+    // If you only have 1 month of data, the "latest" index is 0. Otherwise, it's the last index.
+fn build_html_response(metrics: &MonthlyMetrics, events_file: &str, page: usize) -> String {    
+    let last_idx = if metrics.months.is_empty() {
+        0
+    } else {
+        metrics.months.len() - 1
+    };
+
+    // Grab the “latest” values for each metric.
+    let latest_revenue   = metrics.revenue.get(last_idx).unwrap_or(&0.0);
+    let latest_burn      = metrics.burn_rate.get(last_idx).unwrap_or(&0.0);
+    let latest_runway    = metrics.runway.get(last_idx).unwrap_or(&0.0);
+    let latest_retention = metrics.retention.get(last_idx).unwrap_or(&0.0);
+    let latest_ndr       = metrics.net_dollar_retention.get(last_idx).unwrap_or(&0.0);
+    let latest_margin    = metrics.gross_margin.get(last_idx).unwrap_or(&0.0);
+
+    // Determine color for each metric based on trend
+    let revenue_color   = get_trend_color(&metrics.revenue);
+    let burn_color      = get_trend_color(&metrics.burn_rate);
+    let runway_color    = get_trend_color(&metrics.runway);
+    let retention_color = get_trend_color(&metrics.retention);
+    let ndr_color       = get_trend_color(&metrics.net_dollar_retention);
+    let margin_color    = get_trend_color(&metrics.gross_margin);
+
+    // Build small HTML lists (or tables) of past values for each metric
+    let past_values_revenue = build_past_values_list("Revenue", &metrics.months, &metrics.revenue);
+    let past_values_burn    = build_past_values_list("Burn Rate", &metrics.months, &metrics.burn_rate);
+    let past_values_runway  = build_past_values_list("Runway (Months)", &metrics.months, &metrics.runway);
+    let past_values_ret     = build_past_values_list("Retention (%)", &metrics.months, &metrics.retention);
+    let past_values_ndr     = build_past_values_list("Net Dollar Ret. (%)", &metrics.months, &metrics.net_dollar_retention);
+    let past_values_margin  = build_past_values_list("Gross Margin (%)", &metrics.months, &metrics.gross_margin);
+
+    // Each “spec_box” is wrapped in a <div id="someMetricId" ...> so we can toggle it on/off with checkboxes.
+    let spec_boxes = format!(
+        r#"
+        <!-- REVENUE -->
+        <div class="metric-box" id="metric-revenue">
+            <div class="metric-info">
+                <h2>Revenue</h2>
+                <p class="value" style="color:{rev_color}">${rev:.2}</p>
+                {past_rev}
+            </div>
+            <div class="chart-container">
+                <object data="/static/templates/charts/chart_revenue.svg" type="image/svg+xml"></object>
+            </div>
+        </div>
+
+        <!-- BURN RATE -->
+        <div class="metric-box" id="metric-burn">
+            <div class="metric-info">
+                <h2>Burn Rate</h2>
+                <p class="value" style="color:{burn_color}">${burn:.2}</p>
+                {past_burn}
+            </div>
+            <div class="chart-container">
+                <object data="/static/templates/charts/chart_burn_rate.svg" type="image/svg+xml"></object>
+            </div>
+        </div>
+
+        <!-- RUNWAY -->
+        <div class="metric-box" id="metric-runway">
+            <div class="metric-info">
+                <h2>Runway (Months)</h2>
+                <p class="value" style="color:{runway_color}">{runway:.2}</p>
+                {past_runway}
+            </div>
+            <div class="chart-container">
+                <object data="/static/templates/charts/chart_runway.svg" type="image/svg+xml"></object>
+            </div>
+        </div>
+
+        <!-- RETENTION -->
+        <div class="metric-box" id="metric-retention">
+            <div class="metric-info">
+                <h2>Retention (%)</h2>
+                <p class="value" style="color:{ret_color}">{ret:.2}%</p>
+                {past_ret}
+            </div>
+            <div class="chart-container">
+                <object data="/static/templates/charts/chart_retention.svg" type="image/svg+xml"></object>
+            </div>
+        </div>
+
+        <!-- NET DOLLAR RETENTION -->
+        <div class="metric-box" id="metric-ndr">
+            <div class="metric-info">
+                <h2>Net Dollar Ret. (%)</h2>
+                <p class="value" style="color:{ndr_color}">{ndr:.2}%</p>
+                {past_ndr}
+            </div>
+            <div class="chart-container">
+                <object data="/static/templates/charts/chart_ndr.svg" type="image/svg+xml"></object>
+            </div>
+        </div>
+
+        <!-- GROSS MARGIN -->
+        <div class="metric-box" id="metric-margin">
+            <div class="metric-info">
+                <h2>Gross Margin (%)</h2>
+                <p class="value" style="color:{margin_color}">{margin:.2}%</p>
+                {past_margin}
+            </div>
+            <div class="chart-container">
+                <object data="/static/templates/charts/chart_gross_margin.svg" type="image/svg+xml"></object>
+            </div>
+        </div>
+        "#,
+        rev_color     = revenue_color,
+        rev           = latest_revenue,
+        past_rev      = past_values_revenue,
+        burn_color    = burn_color,
+        burn          = latest_burn,
+        past_burn     = past_values_burn,
+        runway_color  = runway_color,
+        runway        = latest_runway,
+        past_runway   = past_values_runway,
+        ret_color     = retention_color,
+        ret           = latest_retention,
+        past_ret      = past_values_ret,
+        ndr_color     = ndr_color,
+        ndr           = latest_ndr,
+        past_ndr      = past_values_ndr,
+        margin_color  = margin_color,
+        margin        = latest_margin,
+        past_margin   = past_values_margin,
+    );
+
+    // Pull out just the file name (without path) if desired:
+    // e.g., from "data/TEST_seriesD.evnt" -> "TEST_seriesD.evnt"
+    let displayed_file_name = events_file
+        .split('/')
+        .last()
+        .unwrap_or(events_file);
+
+    format!(
+        r#"
+        <html>
+        <head>
+            <title>Business Metrics Dashboard</title>
+            <style>
+                body {{
+                    font-family: Arial, sans-serif;
+                    background-color: #fff;
+                    color: #000;
+                    margin: 0; padding: 0;
+                }}
+                h1 {{
+                    text-align: center;
+                    margin-top: 20px;
+                }}
+                h2 {{
+                    margin: 0;
+                    font-size: 1.5em;
+                }}
+                .file-name {{
+                    text-align: center;
+                    font-size: 1.2em;
+                    margin-bottom: 20px;
+                    color: #555;
+                }}
+                .checkboxes {{
+                    text-align: center;
+                    margin: 20px 0;
+                }}
+                .checkboxes label {{
+                    margin: 0 10px;
+                    font-weight: bold;
+                }}
+                .grid-container {{
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(600px, 1fr));
+                    gap: 20px;
+                    padding: 20px;
+                }}
+                .metric-box {{
+                    border: 3px solid #000;
+                    border-radius: 15px;
+                    display: flex;
+                    padding: 20px;
+                    background-color: #fff;
+                }}
+                .metric-info {{
+                    flex: 1;
+                    margin-right: 20px;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: space-between;
+                }}
+                .metric-info .value {{
+                    font-size: 1.5em;
+                    margin-top: 10px;
+                }}
+                .chart-container {{
+                    flex: 2;
+                }}
+                /* Make charts bigger */
+                .chart-container object {{
+                    width: 100%;
+                    height: 400px; /* increased to 400px */
+                    border: 1px solid #ccc;
+                }}
+                .past-values {{
+                    margin-top: 10px;
+                }}
+                .past-values table {{
+                    border-collapse: collapse;
+                    width: 100%;
+                }}
+                .past-values td, .past-values th {{
+                    border: 1px solid #ccc;
+                    padding: 4px;
+                    text-align: center;
+                }}
+                .past-values th {{
+                    background-color: #f7f7f7;
+                }}
+            </style>
+            <script>
+                function toggleMetric(metricId) {{
+                  var box = document.getElementById(metricId);
+                  if (box.style.display === "none") {{
+                    box.style.display = "flex";
+                  }} else {{
+                    box.style.display = "none";
+                  }}
+                }}
+            </script>
+        </head>
+        <body>
+            <h1>Business Metrics Dashboard</h1>
+            <!-- Display the correct file name -->
+            <div class="file-name">Loaded File: {filename}</div>
+
+            <!-- Checkboxes to toggle metrics on/off -->
+            <div class="checkboxes">
+                <label><input type="checkbox" checked onclick="toggleMetric('metric-revenue')"/> Revenue</label>
+                <label><input type="checkbox" checked onclick="toggleMetric('metric-burn')"/> Burn</label>
+                <label><input type="checkbox" checked onclick="toggleMetric('metric-runway')"/> Runway</label>
+                <label><input type="checkbox" checked onclick="toggleMetric('metric-retention')"/> Retention</label>
+                <label><input type="checkbox" checked onclick="toggleMetric('metric-ndr')"/> NDR</label>
+                <label><input type="checkbox" checked onclick="toggleMetric('metric-margin')"/> Margin</label>
+            </div>
+
+            <div class="grid-container">
+                {spec_boxes}
+            </div>
+        </body>
+        </html>
+        "#,
+        filename = displayed_file_name,
+        spec_boxes = spec_boxes
+    )
+}
+
+/// Builds an HTML snippet showing the historical (monthly) values for a given metric in a simple table
+fn build_past_values_list(
+    metric_name: &str,
+    months: &[String],
+    values: &[f64]
+) -> String {
+    // If you’d rather display them in a single column, you can adapt as needed.
+    // This example shows a 2-column table: Month | Value
+    if months.is_empty() {
+        return "".to_string();
+    }
+    let mut rows = String::new();
+    for (m, v) in months.iter().zip(values.iter()) {
+        rows.push_str(&format!(
+            "<tr><td>{month}</td><td>{val:.2}</td></tr>",
+            month = m,
+            val = v
+        ));
+    }
+    format!(
+        r#"
+        <div class="past-values">
+            <table>
+                <tr><th colspan="2">Past {metric_name}</th></tr>
+                <tr><th>Month</th><th>Value</th></tr>
+                {rows}
+            </table>
+        </div>
+        "#,
+        metric_name = metric_name,
+        rows = rows
+    )
+}
+
+
+/Users/jude/Desktop/OpenMetric/OpenMetric/src/routes/mod.rs:
+pub mod index;
+

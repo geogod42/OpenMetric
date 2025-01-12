@@ -1,4 +1,5 @@
 /target
+.git
 /data
 /tools
 /templates/charts

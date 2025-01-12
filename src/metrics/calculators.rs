@@ -1,3 +1,4 @@
+// calculators.rs
 use crate::metrics::events::Event;
 use crate::metrics::retention::RetentionData;
 use chrono::{DateTime, Utc, Datelike};
@@ -29,7 +30,7 @@ pub fn collect_monthly_metrics(
     let mut ndr = Vec::new();
     let mut gross_margin = Vec::new();
 
-    let static_empty_vec: Vec<Event> = Vec::new(); // Static empty vector
+    let static_empty_vec: Vec<Event> = Vec::new();
 
     for m in &month_keys {
         let events = grouped_events.get(m).unwrap_or(&static_empty_vec);
@@ -63,10 +64,8 @@ pub fn collect_monthly_metrics(
         }
 
         ndr.push(calculate_net_dollar_retention(events));
-        gross_margin.push(calculate_gross_margin(events));
+        gross_margin.push(calculate_gross_margin(monthly_revenue, monthly_expenses));
     }
-
-    println!("Monthly metrics calculated: {:?}", month_keys); // Debug log
 
     MonthlyMetrics {
         months: month_keys,
@@ -79,7 +78,6 @@ pub fn collect_monthly_metrics(
     }
 }
 
-/// Groups events by their `YYYY-MM` month.
 fn group_events_by_month(events: &[Event]) -> HashMap<String, Vec<Event>> {
     let mut grouped_events: HashMap<String, Vec<Event>> = HashMap::new();
 
@@ -99,7 +97,20 @@ pub fn calculate_net_dollar_retention(_events: &[Event]) -> f64 {
     100.0 // Placeholder logic
 }
 
-pub fn calculate_gross_margin(_events: &[Event]) -> f64 {
-    50.0 // Placeholder logic
+pub fn calculate_gross_margin(revenue: f64, expenses: f64) -> f64 {
+    if revenue == 0.0 {
+        0.0
+    } else {
+        ((revenue - expenses) / revenue) * 100.0
+    }
 }
 
+pub fn format_revenue(value: f64) -> String {
+    if value.abs() < 1_000.0 {
+        format!("${:.0}", value)
+    } else if value.abs() < 1_000_000.0 {
+        format!("${:.1}k", value / 1_000.0)
+    } else {
+        format!("${:.2}m", value / 1_000_000.0)
+    }
+}

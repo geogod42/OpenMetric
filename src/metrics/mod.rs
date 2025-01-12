@@ -4,7 +4,8 @@ pub mod calculators;
 
 pub use events::load_events;
 pub use retention::load_retention;
-pub use calculators::{collect_monthly_metrics, calculate_net_dollar_retention, calculate_gross_margin};
+pub use calculators::{collect_monthly_metrics};
+
 
 use std::fs;
 

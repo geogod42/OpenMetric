@@ -1,166 +1,77 @@
-use actix_web::{get, HttpResponse, Responder};
+// index.rs
+use actix_web::{get, HttpRequest, HttpResponse, Responder};
+use crate::metrics::calculators::MonthlyMetrics;
+use crate::metrics::events::Event;
 use crate::metrics::{get_data_files, load_events, load_retention, collect_monthly_metrics};
 use crate::charts::generate_all_charts;
+use std::collections::HashMap;
+use chrono::{DateTime, Utc, Duration};
 
 #[get("/")]
-pub async fn index() -> impl Responder {
-    // Identify data files
+pub async fn index(req: HttpRequest) -> impl Responder {
+    let query: HashMap<String, String> = serde_urlencoded::from_str(req.query_string()).unwrap_or_default();
+    let time_window = query.get("time_window").cloned().unwrap_or_else(|| "all".to_string());
+    let page: usize = query.get("page").and_then(|v| v.parse().ok()).unwrap_or(0);
+
     let data_files = get_data_files();
     if data_files.is_empty() {
         return HttpResponse::Ok().body("<h1>No valid .evnt and .ret file pairs found in data/ folder</h1>");
     }
 
-    // Load events and retention data
     let (events_file, retention_file) = &data_files[0];
     let events = load_events(events_file).unwrap_or_else(|e| panic!("Failed to load events: {}", e));
     let retention_map = load_retention(retention_file).unwrap_or_else(|e| panic!("Failed to load retention data: {}", e));
 
-    // Calculate monthly metrics
-    let monthly_metrics = collect_monthly_metrics(&events, &retention_map);
+    let filtered_events = match time_window.as_str() {
+        "3" => filter_events_by_months(&events, 3),
+        "6" => filter_events_by_months(&events, 6),
+        "12" => filter_events_by_months(&events, 12),
+        _ => events,
+    };
 
-    // Generate charts (now .svg files)
+    let monthly_metrics = collect_monthly_metrics(&filtered_events, &retention_map);
     generate_all_charts(&monthly_metrics).expect("Failed to generate charts");
 
-    // Build HTML response
-    let html = build_html_response(&monthly_metrics);
+    let html = build_html_response(&monthly_metrics, events_file, page);
     HttpResponse::Ok().content_type("text/html").body(html)
 }
 
-fn build_html_response(metrics: &crate::metrics::calculators::MonthlyMetrics) -> String {
-    let last_idx = if metrics.months.is_empty() { 0 } else { metrics.months.len() - 1 };
-
-    let spec_boxes = format!(
-        r#"
-        <div class="metric-box">
-            <div class="metric-info">
-                <h2>Revenue</h2>
-                <p class="value">${:.2}</p>
-            </div>
-            <div class="chart-container">
-                <object data="/static/templates/charts/chart_revenue.svg" type="image/svg+xml"></object>
-            </div>
-        </div>
-        <div class="metric-box">
-            <div class="metric-info">
-                <h2>Burn Rate</h2>
-                <p class="value">${:.2}</p>
-            </div>
-            <div class="chart-container">
-                <object data="/static/templates/charts/chart_burn_rate.svg" type="image/svg+xml"></object>
-            </div>
-        </div>
-        <div class="metric-box">
-            <div class="metric-info">
-                <h2>Runway (Months)</h2>
-                <p class="value">{:.2}</p>
-            </div>
-            <div class="chart-container">
-                <object data="/static/templates/charts/chart_runway.svg" type="image/svg+xml"></object>
-            </div>
-        </div>
-        <div class="metric-box">
-            <div class="metric-info">
-                <h2>Retention (%)</h2>
-                <p class="value">{:.2}%</p>
-            </div>
-            <div class="chart-container">
-                <object data="/static/templates/charts/chart_retention.svg" type="image/svg+xml"></object>
-            </div>
-        </div>
-        <div class="metric-box">
-            <div class="metric-info">
-                <h2>Net Dollar Ret. (%)</h2>
-                <p class="value">{:.2}%</p>
-            </div>
-            <div class="chart-container">
-                <object data="/static/templates/charts/chart_ndr.svg" type="image/svg+xml"></object>
-            </div>
-        </div>
-        <div class="metric-box">
-            <div class="metric-info">
-                <h2>Gross Margin (%)</h2>
-                <p class="value">{:.2}%</p>
-            </div>
-            <div class="chart-container">
-                <object data="/static/templates/charts/chart_gross_margin.svg" type="image/svg+xml"></object>
-            </div>
-        </div>
-        "#,
-        metrics.revenue.get(last_idx).unwrap_or(&0.0),
-        metrics.burn_rate.get(last_idx).unwrap_or(&0.0),
-        metrics.runway.get(last_idx).unwrap_or(&0.0),
-        metrics.retention.get(last_idx).unwrap_or(&0.0),
-        metrics.net_dollar_retention.get(last_idx).unwrap_or(&0.0),
-        metrics.gross_margin.get(last_idx).unwrap_or(&0.0),
-    );
-
-    format!(
-        r#"
-        <html>
-        <head>
-            <title>Business Metrics Dashboard</title>
-            <style>
-                body {{
-                    font-family: Arial, sans-serif;
-                    background-color: #fff; 
-                    color: #000;
-                }}
-                h1 {{
-                    text-align: center;
-                    margin-top: 20px;
-                }}
-                h2 {{
-                    margin: 0;
-                    font-size: 1.5em;
-                }}
-                .file-name {{
-                    text-align: center;
-                    font-size: 1.2em;
-                    margin-bottom: 20px;
-                    color: #555;
-                }}
-                .grid-container {{
-                    display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(600px, 1fr));
-                    gap: 20px;
-                    padding: 20px;
-                }}
-                .metric-box {{
-                    border: 3px solid #000;
-                    border-radius: 15px; /* Rounded borders */
-                    display: flex;
-                    padding: 20px;
-                    background-color: #fff;
-                }}
-                .metric-info {{
-                    flex: 1;
-                    margin-right: 20px;
-                }}
-                .metric-info .value {{
-                    font-size: 1.5em;
-                    margin-top: 10px;
-                }}
-                .chart-container {{
-                    flex: 2;
-                }}
-                .chart-container object {{
-                    width: 100%;
-                    height: 300px;
-                    border: 1px solid #ccc;
-                }}
-            </style>
-        </head>
-        <body>
-            <h1>Business Metrics Dashboard</h1>
-            <div class="file-name">Loaded File: data/your_file_name.evnt</div>
-            <div class="grid-container">
-                {spec_boxes}
-            </div>
-        </body>
-        </html>
-        "#,
-        spec_boxes = spec_boxes
-    )
+pub fn filter_events_by_months(events: &[Event], months: i64) -> Vec<Event> {
+    let cutoff_date = Utc::now() - Duration::days(months * 30);
+    events
+        .iter()
+        .filter(|e| {
+            let dt = DateTime::parse_from_rfc3339(&e.timestamp).unwrap().with_timezone(&Utc);
+            dt > cutoff_date
+        })
+        .cloned()
+        .collect()
 }
 
+fn build_html_response(metrics: &MonthlyMetrics, events_file: &str, page: usize) -> String {
+    let last_idx = if metrics.months.is_empty() {
+        0
+    } else {
+        metrics.months.len() - 1
+    };
+
+    let latest_revenue = metrics.revenue.get(last_idx).unwrap_or(&0.0);
+    let latest_burn = metrics.burn_rate.get(last_idx).unwrap_or(&0.0);
+    let latest_runway = metrics.runway.get(last_idx).unwrap_or(&0.0);
+    let latest_retention = metrics.retention.get(last_idx).unwrap_or(&0.0);
+    let latest_ndr = metrics.net_dollar_retention.get(last_idx).unwrap_or(&0.0);
+    let latest_margin = metrics.gross_margin.get(last_idx).unwrap_or(&0.0);
+
+    let html_template = format!(
+        "<html><head><title>Dashboard</title></head><body>\
+        <h1>Metrics Dashboard</h1>\
+        <p>Revenue: ${:.2}, Burn Rate: ${:.2}, Runway: {:.2} months</p>\
+        <p>Retention: {:.2}%, NDR: {:.2}%, Gross Margin: {:.2}%</p>\
+        <p>Page: {}</p>\
+        </body></html>",
+        latest_revenue, latest_burn, latest_runway, latest_retention, latest_ndr, latest_margin, page
+    );
+
+    html_template
+}
 
