@@ -4,6 +4,26 @@ use crate::metrics::retention::RetentionData;
 use chrono::{DateTime, Utc, Datelike};
 use std::collections::HashMap;
 
+/// Convert a month number (1-12) to an English month name used by the
+/// retention JSON files.
+fn month_number_to_name(month: u32) -> &'static str {
+    match month {
+        1 => "January",
+        2 => "February",
+        3 => "March",
+        4 => "April",
+        5 => "May",
+        6 => "June",
+        7 => "July",
+        8 => "August",
+        9 => "September",
+        10 => "October",
+        11 => "November",
+        12 => "December",
+        _ => "",
+    }
+}
+
 pub struct MonthlyMetrics {
     pub months: Vec<String>,
     pub revenue: Vec<f64>,
@@ -51,7 +71,13 @@ pub fn collect_monthly_metrics(
             f64::INFINITY
         });
 
-        if let Some(retention_data) = retention_map.get(m) {
+        // retention data files use human-readable month names (e.g. "January")
+        // while the events are grouped by "YYYY-MM". Convert the key so we can
+        // look up the correct retention entry.
+        let month_num: u32 = m.split('-').nth(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+        let month_name = month_number_to_name(month_num);
+
+        if let Some(retention_data) = retention_map.get(month_name) {
             if retention_data.acquired > 0 {
                 retention.push(
                     retention_data.active.iter().sum::<u32>() as f64 / retention_data.acquired as f64 * 100.0,
